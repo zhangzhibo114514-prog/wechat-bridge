@@ -1,0 +1,37 @@
+# 依赖清单（.deps.txt）
+#
+# 来源：全部来自 **PyPI**。`pkg_fetch.py` 默认依次尝试三个索引，谁先通用谁：
+#     1) https://mirrors.aliyun.com/pypi/simple        （国内快，实测 0.3s）
+#     2) https://pypi.tuna.tsinghua.edu.cn/simple      （国内备选）
+#     3) https://pypi.org/simple                       （官方兜底，直连慢）
+#   想指定就加 `--index <url>`（可重复，按顺序尝试）。
+#
+# 下面的版本号是**本机真实验证过、跑通 23 项回归**的那一组；不带版本重装很容易装到
+# 行为不一样的版本（这个项目的很多坑都在 `wechatauto` 这一层的库格式与 UIA 行为上）。
+# `wechatauto-replica` 是**关键依赖**：它变了，群消息/引用/图片的解析就可能变，
+# 升级前先跑 `python group_selftest.py` 与 `python adapter_selftest.py`。
+#
+# 装法见 README「依赖装配」；下面是验证过的那一组：
+#
+wechatauto-replica==1.2.6.1
+uiautomation==2.0.9
+pywin32==312
+pyperclip==1.11.0
+comtypes==1.4.9
+cryptography==50.0.2
+pillow==12.3.0
+psutil==7.2.2
+colorama==0.4.6rc1
+zstandard==0.25.0
+opencv-python==5.0.0.93
+cffi==2.1.1
+numpy==2.5.4
+imageio-ffmpeg==0.6.0
+# OCR（「群里 @ 人」的兜底路径要它）；注意：**不要装 winsdk**（只有 cp39 轮子）
+winrt-runtime==3.2.1
+winrt-Windows.Media.Ocr==3.2.1
+winrt-Windows.Graphics.Imaging==3.2.1
+winrt-Windows.Storage==3.2.1
+winrt-Windows.Foundation==3.2.1
+winrt-Windows.Globalization==3.2.1
+typing-extensions==4.9.0rc1

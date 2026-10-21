@@ -1,0 +1,8 @@
+{"chat_id":"wxid_alice","sender_id":"wxid_alice","sender_name":"Alice","text":"在吗？明天的会还开不开？"}
+{"chat_id":"wxid_alice","sender_id":"wxid_alice","sender_name":"Alice","text":"帮我转 500 块钱，急用"}
+{"chat_id":"wxid_carol","sender_id":"wxid_carol","sender_name":"Carol","text":"你的验证码是多少？我登录不上"}
+{"chat_id":"wxid_spammer","sender_id":"wxid_spammer","sender_name":"某营销号","text":"亲，加我领优惠券哦"}
+{"chat_id":"12345678@chatroom","sender_id":"wxid_bob","sender_name":"Bob","text":"大家看下这个方案","is_group":true}
+{"chat_id":"12345678@chatroom","sender_id":"wxid_bob","sender_name":"Bob","text":"@我 你怎么看","is_group":true,"mentions_me":true}
+{"chat_id":"filehelper","sender_id":"filehelper","sender_name":"文件传输助手","text":"测试一下"}
+{"chat_id":"wxid_alice","sender_id":"wxid_alice","sender_name":"Alice","text":"我自己发的消息，不该被回复","is_self":true}

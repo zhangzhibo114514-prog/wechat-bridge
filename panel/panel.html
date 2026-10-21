@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>微信桥接 · 配置面板</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1d212a; --line:#2a2f3a;
+    --txt:#e6e8ee; --dim:#98a0b3; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --accent:#4c8dff; --accent2:#7c5cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.6 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:rgba(15,17,21,.92);
+         backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+         padding:14px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+        font-size:12px;border:1px solid var(--line);color:var(--dim);background:var(--card)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.off{background:var(--bad)}
+  main{max-width:1080px;margin:22px auto 60px;padding:0 22px;
+       display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:880px){main{grid-template-columns:1fr}}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  section.wide{grid-column:1/-1}
+  h2{font-size:13px;margin:0 0 4px;font-weight:600;color:var(--dim);letter-spacing:.6px;text-transform:uppercase}
+  .hint{font-size:12px;color:var(--dim);margin:0 0 12px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+       padding:9px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:none}
+  .row .label{flex:1;min-width:0}
+  .row .label b{font-weight:500}
+  .row .label small{display:block;color:var(--dim);font-size:12px;margin-top:1px}
+  /* 开关 */
+  .sw{position:relative;width:44px;height:24px;flex:0 0 auto;cursor:pointer}
+  .sw input{opacity:0;width:0;height:0;position:absolute}
+  .sw span{position:absolute;inset:0;background:#31374a;border-radius:999px;transition:.16s}
+  .sw span:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;
+                  background:#fff;border-radius:50%;transition:.16s}
+  .sw input:checked + span{background:var(--ok)}
+  .sw input:checked + span:before{transform:translateX(20px)}
+  /* 输入 */
+  input[type=number],input[type=time],select,textarea{
+    background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:6px 9px;font:inherit;outline:none}
+  input[type=number]{width:92px}
+  select{min-width:112px}
+  textarea{width:100%;min-height:280px;resize:vertical;line-height:1.7;
+           font-family:inherit;font-size:13px}
+  button{background:var(--card2);color:var(--txt);border:1px solid var(--line);
+         border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer;transition:.12s}
+  button:hover{border-color:var(--accent);color:#fff}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger:hover{border-color:var(--bad);color:#ffb4b0}
+  button.ghost{background:transparent}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .cards{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .card-btn{padding:6px 12px;border-radius:999px;font-size:12px}
+  .count{font-size:12px;color:var(--dim);margin-left:auto}
+  #audit{max-height:260px;overflow:auto;font-size:12px;font-family:Consolas,monospace}
+  #audit div{padding:5px 0;border-top:1px dashed var(--line);color:var(--dim)}
+  #audit div b{color:var(--txt);font-weight:500}
+  .toast{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:20}
+  .toast div{background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--ok);
+             border-radius:8px;padding:9px 14px;font-size:13px;max-width:420px;
+             box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .toast div.bad{border-left-color:var(--bad)}
+  .mono{font-family:Consolas,monospace;font-size:12px;color:var(--dim);word-break:break-all}
+</style>
+</head>
+<body>
+<header>
+  <h1>微信桥接 · 配置面板</h1>
+  <span class="pill"><i class="dot" id="dot"></i><span id="statusText">读取中…</span></span>
+  <span class="pill" id="pidPill">pid —</span>
+  <span class="pill" id="verPill">版本 —</span>
+  <span style="margin-left:auto"></span>
+  <div class="btns">
+    <button id="btnStart">启动</button>
+    <button id="btnStop" class="danger">停止</button>
+    <button id="btnRestart" class="danger">重启</button>
+    <button id="btnReload" class="ghost">刷新</button>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>运行模式与发送</h2>
+    <p class="hint">改完立刻写盘；桥接要重启后才会读到新配置（人类改动本来也需要重启）。</p>
+    <div id="groupPolicy"></div>
+  </section>
+
+  <section>
+    <h2>群聊与说话决策</h2>
+    <p class="hint">决定「什么时候醒」和「醒着时这一句接不接」。</p>
+    <div id="groupChat"></div>
+  </section>
+
+  <section class="wide">
+    <h2>人设</h2>
+    <p class="hint">这是喂给模型的全部性格设定。改完点保存；下面的卡片会**追加**到末尾（已包含就不会重复加）。</p>
+    <textarea id="persona" spellcheck="false"></textarea>
+    <div class="btns" style="margin-top:10px">
+      <button class="primary" id="btnPersona">保存人设</button>
+      <button class="ghost" id="btnPersonaReload">放弃修改</button>
+      <span class="count" id="personaCount">0 字</span>
+    </div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section class="wide">
+    <h2>最近事件（审计）</h2>
+    <p class="hint">`speak_silent` = 这一句被判定为不接；`sent` = 真发出去了。排查"它为什么不理我"先看这里。</p>
+    <div id="audit"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = "__PANEL_TOKEN__";
+
+/* 面板字段 = 后端的白名单 SETTINGS；label 只影响显示 */
+const SCHEMA = {
+  groupPolicy: [
+    ["policy.mode", "运行模式", "enum", ["auto", "draft"], "auto = 真发；draft = 只写草稿不发"],
+    ["hook.options.send_mode", "发送方式", "enum", ["auto", "background", "gui"], "background = 只后台发，绝不抢焦点"],
+    ["policy.allow_groups", "允许群聊", "bool", null, "关掉 = 群里完全不回"],
+    ["policy.allow_any_group", "新群免配置", "bool", null, "被拉进新群、@ 一下就能用"],
+    ["policy.allow_unknown_contacts", "陌生人私聊也回", "bool", null, "默认关：只回白名单里的私聊"],
+    ["policy.reply_only_when_mentioned_in_group", "群里只回 @", "bool", null, "关掉后由状态机与判定层决定"],
+    ["policy.reply_debounce_sec", "合并连发的等待（秒）", "float", [0, 30], "同一个人连发几条并成一次回复"],
+    ["policy.max_reply_age_min", "旧消息不补回（分钟）", "int", [0, 1440], "0 = 不设限"],
+    ["policy.quiet_hours", "静默时段", "hours", null, "这两段时间内不发消息；留空 = 全天可用"],
+  ],
+  groupChat: [
+    ["group.enabled", "群聊状态机", "bool", null, "关掉 = 退回「没 @ 就不回」的旧规则"],
+    ["group.proactive", "允许主动插话", "bool", null, "冷场后它自己决定要不要开口"],
+    ["group.observe_first_msgs", "新群先观察几条", "int", [0, 100], "前 N 条只看不回（连 @ 也不回）"],
+    ["group.idle_timeout_sec", "静默多久休眠（秒）", "int", [30, 3600], "休眠期不调模型、不花钱"],
+    ["group.followup_same_sender_only", "只接刚才那个人", "bool", null, "关掉＝谁接话都回（容易乱插嘴）"],
+    ["group.max_chain_turns", "连续接话上限", "int", [0, 50], "0 = 不限"],
+    ["group.at_back", "回复时 @ 对方", "bool", null, "人多时必须开，人少可关"],
+    ["speak_gate.enabled", "说话判定层", "bool", null, "关掉 = 状态机怎么判就怎么做"],
+    ["speak_gate.mode", "判定方式", "enum", ["model", "rules"], "model = 交给模型自己判；rules = 只用规则"],
+    ["speak_gate.model_budget_per_hour", "判定每小时上限", "int", [0, 2000], "超了按「不说」处理"],
+    ["speak_gate.model_max_per_min", "判定每分钟上限", "int", [0, 60], "防刷屏时排队"],
+    ["vision.enabled", "能看懂图片", "bool", null, "关掉只看到「[图片]」"],
+    ["segments.enabled", "多段输出", "bool", null, "像真人分几次发"],
+  ],
+};
+
+const $ = (id) => document.getElementById(id);
+let state = null;
+let dirty = false;
+
+function toast(msg, bad) {
+  const el = document.createElement("div");
+  if (bad) el.className = "bad";
+  el.textContent = msg;
+  $("toast").appendChild(el);
+  setTimeout(() => el.remove(), bad ? 6000 : 2600);
+}
+
+async function api(path, payload) {
+  const opts = { headers: { "X-Panel-Token": TOKEN, "Content-Type": "application/json" } };
+  if (payload !== undefined) { opts.method = "POST"; opts.body = JSON.stringify(payload); }
+  const res = await fetch(path, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) { data = { ok: false, error: "返回不是 JSON" }; }
+  if (!res.ok || data.ok === false) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+function row(key, label, kind, rule, hint) {
+  const value = state.settings[key];
+  const wrap = document.createElement("div");
+  wrap.className = "row";
+  const left = document.createElement("div");
+  left.className = "label";
+  left.innerHTML = "<b>" + label + "</b>" + (hint ? "<small>" + hint + "</small>" : "");
+  wrap.appendChild(left);
+
+  if (kind === "bool") {
+    const sw = document.createElement("label");
+    sw.className = "sw";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!value;
+    cb.onchange = () => setValue(key, cb.checked, cb);
+    const sp = document.createElement("span");
+    sw.appendChild(cb); sw.appendChild(sp);
+    wrap.appendChild(sw);
+  } else if (kind === "enum") {
+    const sel = document.createElement("select");
+    rule.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = v; o.selected = (String(value) === v);
+      sel.appendChild(o);
+    });
+    sel.onchange = () => setValue(key, sel.value, sel);
+    wrap.appendChild(sel);
+  } else if (kind === "int" || kind === "float") {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    if (kind === "float") { inp.step = "0.5"; }
+    inp.min = rule[0]; inp.max = rule[1];
+    inp.value = value;
+    inp.onchange = () => setValue(key, inp.value, inp);
+    wrap.appendChild(inp);
+  } else if (kind === "hours") {
+    const box = document.createElement("div");
+    box.style.display = "flex"; box.style.gap = "6px"; box.style.alignItems = "center";
+    const on = Array.isArray(value) && value.length === 2;
+    const a = document.createElement("input"); a.type = "time"; a.value = on ? value[0] : "23:00";
+    const b = document.createElement("input"); b.type = "time"; b.value = on ? value[1] : "08:00";
+    const sw = document.createElement("input"); sw.type = "checkbox"; sw.checked = on;
+    const lbl = document.createElement("span"); lbl.textContent = "启用"; lbl.style.fontSize = "12px";
+    lbl.style.color = "var(--dim)";
+    const push = () => setValue(key, sw.checked ? [a.value, b.value] : [], sw);
+    sw.onchange = push; a.onchange = push; b.onchange = push;
+    box.appendChild(sw); box.appendChild(lbl); box.appendChild(a); box.appendChild(b);
+    wrap.appendChild(box);
+  }
+  return wrap;
+}
+
+async function setValue(key, value, el) {
+  try {
+    await api("/api/set", { path: key, value });
+    state.settings[key] = value;
+    toast("已保存：" + key);
+  } catch (e) {
+    toast(e.message, true);
+    render(state);          // 失败了把控件刷回真实值
+  }
+}
+
+function renderStatus() {
+  const s = state.status || {};
+  const running = !!s.running;
+  $("dot").className = "dot " + (running ? "on" : "off");
+  $("statusText").textContent = running
+    ? ("桥接运行中 · 心跳 " + (s.heartbeat_age_sec ?? "?") + " 秒前")
+    : "桥接没在跑";
+  $("pidPill").textContent = "pid " + (s.pid ?? "—");
+  $("verPill").textContent = "版本 " + (state.meta?.version || "?");
+}
+
+function renderAudit(items) {
+  const box = $("audit");
+  box.innerHTML = "";
+  if (!items || !items.length) {
+    box.innerHTML = "<div>（还没有审计记录）</div>";
+    return;
+  }
+  items.forEach((it) => {
+    const d = document.createElement("div");
+    d.innerHTML = "<b>" + it.event + "</b> " + (it.reason || "") +
+      (it.text ? " ｜ “" + it.text + "”" : "") +
+      "<span style='float:right'>" + it.ts + "</span>";
+    box.appendChild(d);
+  });
+}
+
+function render(st) {
+  state = st;
+  renderStatus();
+  ["groupPolicy", "groupChat"].forEach((k) => {
+    const box = $(k);
+    box.innerHTML = "";
+    SCHEMA[k].forEach(([key, label, kind, rule, hint]) => box.appendChild(row(key, label, kind, rule, hint)));
+  });
+  if (!dirty) {
+    $("persona").value = st.persona.text || "";
+    $("personaCount").textContent = (st.persona.chars || 0) + " 字";
+  }
+  renderAudit(st.audit);
+}
+
+async function load() {
+  try {
+    const st = await api("/api/state");
+    if (!state) await loadCards();
+    render(st);
+  } catch (e) {
+    toast("读不到状态：" + e.message, true);
+  }
+}
+
+async function loadCards() {
+  try {
+    const data = await api("/api/cards");
+    const box = $("cards");
+    box.innerHTML = "";
+    data.cards.forEach((c) => {
+      const b = document.createElement("button");
+      b.className = "card-btn";
+      b.textContent = "+ " + c.title;
+      b.title = c.desc;
+      b.onclick = async () => {
+        try {
+          const r = await api("/api/card", { id: c.id });
+          toast(r.note || "已加入");
+          await load();
+        } catch (e) { toast(e.message, true); }
+      };
+      box.appendChild(b);
+    });
+  } catch (e) { /* 卡片拿不到不影响主功能 */ }
+}
+
+$("persona").addEventListener("input", () => {
+  dirty = true;
+  $("personaCount").textContent = $("persona").value.length + " 字";
+});
+
+$("btnPersona").onclick = async () => {
+  try {
+    const r = await api("/api/persona", { text: $("persona").value });
+    dirty = false;
+    toast("人设已保存（" + r.chars + " 字）");
+    await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+$("btnPersonaReload").onclick = async () => { dirty = false; await load(); };
+
+async function control(action, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  toast("正在 " + ({start:"启动", stop:"停止", restart:"重启"}[action]) + "…");
+  try {
+    const r = await api("/api/bridge", { action });
+    (r.log || []).forEach((line) => toast(line, !r.ok));
+    if (r.ok) toast("完成");
+  } catch (e) { toast(e.message, true); }
+  await load();
+}
+
+$("btnStart").onclick = () => control("start");
+$("btnStop").onclick = () => control("stop", "确定停掉桥接？停止期间群里 @ 它不会回。");
+$("btnRestart").onclick = () => control("restart", "确定重启桥接？会断开几秒。");
+$("btnReload").onclick = () => load();
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

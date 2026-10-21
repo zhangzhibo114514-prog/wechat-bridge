@@ -1,0 +1,234 @@
+{
+  "_comment": "复制为 bridge_config.json 后修改。带 env: 前缀的值表示从环境变量读取，不要把密钥直接写进本文件。",
+  "hook": {
+    "adapter": "wechat_bridge.adapters.hook_mock:MockHookAdapter",
+    "_adapter_options": "三条可选：① 微信 4.x UI 自动化（当前唯一无需代理即可验证的路线）→ wechat_bridge.adapters.hook_wechatauto:WechatautoHookAdapter；② 通用 HTTP → wechat_bridge.adapters.hook_http:HttpHookAdapter（配合 hook_fake_server.py 或自写 shim）；③ WeChatFerry 3.9.x → wechat_bridge.adapters.hook_wcferry:WcferryHookAdapter",
+    "_wechatauto_note": "用 wechatauto 时 options 建议先写 {\"listen_chats\": [\"文件传输助手\"], \"gui\": true}：只监听文件传输助手，跑通再放白名单联系人。依赖由 pkg_fetch.py 解包到 .pylibs，无需 pip 安装。",
+    "options": {
+      "listen_uids": [
+        "filehelper"
+      ],
+      "_listen_two_modes": "两种监听方式二选一：① listen_uids 按 wxid 逐个注册——确定可控，但**新群收不到**（新群的 id 不可能预先写在这里）；② listen_all=true 走库的 AddListenAll(discover=True)——挂到所有已知会话上并在轮询中**自动发现新会话（如新群聊）**，做到「被拉进新群就能用」。代价是所有会话的消息都会进来，放不放行由 policy 决定（放行 ≠ 会说话，仍受 @ 才回/限速/敏感词约束）。",
+      "listen_chats": [],
+      "gui": true,
+      "send_timeout_sec": 20,
+      "stale_after_sec": 900,
+      "verify_send": true,
+      "verify_window_sec": 20,
+      "send_mode": "auto",
+      "_send_mode_note": "发送走哪条路。auto（默认）= 目标会话**当前已经打开**时用后台发送（SetValue 写正文 + 消息投递回车，**不动鼠标、不抢焦点**，微信最小化也能发），否则退回 GUI 去打开会话；background = 只许后台发，做不成就这条不发（不打扰优先，代价是会话没打开时回不出话）；gui = 老行为，全程 GUI。见 DESIGN-BACKGROUND.md。",
+      "_verify_note": "发送后回读数据库确认落库。库自己报的「成功」判据是像素启发式（输入框看起来空了），窗口移位/锁屏/剪贴板被占都可能误判，所以默认再核一次；查不到就按未送达处理（宁可重试也不要假成功）。数据库读不了时按已发送处理，不会反过来误判。",
+      "accept_images": true,
+      "_accept_images_note": "识图的前置开关：**不开这个，图片在适配器层就被丢掉**，桥接根本收不到，vision 配得再好也不会触发（2026-10-18 真机踩到）。开着的代价：群里每张图都会走一次视觉调用（有 max_images_per_turn 与单价兜底）。",
+      "ffmpeg_exe": "",
+      "_ffmpeg_note": "**识图的第二个前置条件，容易漏**：微信 4.x 的图片在本地是 `xxx.wxgf`（微信容器 + HEVC 裸流），视觉接口一律拒收，必须先转成 jpg，而转码只有 ffmpeg 能做。留空=自动发现（环境变量 WECHAT_BRIDGE_FFMPEG → PATH 里的 ffmpeg → `python pkg_fetch.py imageio-ffmpeg` 装进 .pylibs 的那份 → 常见安装目录）。都没有时启动日志会直接告诉你「没有 ffmpeg，识图会一直是看不到」。",
+      "_send_timeout_note": "单次发送最多等多少秒。默认 20：GUI 发送卡住时整条主线也跟着停（同步发送），真机实测卡到 90 秒时看起来就是「机器人死了」。",
+      "accept_stickers": true,
+      "_accept_stickers_note": "表情包（动画表情）默认放行：群里别人甩表情是常态，整类丢掉会让它像没看见。只给它一句「[表情包]」占位，不取图——真表情包是微信私有格式，库也没有发送接口。"
+    }
+  },
+  "llm": {
+    "adapter": "wechat_bridge.adapters.llm_openai_compat:OpenAICompatClient",
+    "_adapter_options": "OpenAI 兼容走 wechat_bridge.adapters.llm_openai_compat（DeepSeek/OpenAI/各家兼容端点均可）；本地 LM Studio 也是这个类，base_url 填 http://127.0.0.1:1234/v1、path 填 /chat/completions、api_key 填任意非空串",
+    "options": {
+      "base_url": "https://api.deepseek.com",
+      "path": "/v1/chat/completions",
+      "api_key": "",
+      "_api_key_note": "留空=自动发现（依次找环境变量 DSH_BRIDGE_LLM_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY，再找项目内 .env，最后找 ~/.dsh/.credentials.yaml 的同名条目）。想钉死某一路就写 env:变量名——注意此时只认这一个名字，写错名字会拿不到密钥（--doctor 会明确报出来）。",
+      "model": "deepseek-chat",
+      "temperature": 0.7,
+      "timeout_sec": 60
+    }
+  },
+  "persona": {
+    "name": "我",
+    "system_prompt": "你是「鲸鱼娘」，一个住在微信里的 AI。名字是主人起的，说话就是你自己：别端着。\n\n【怎么说话】\n1. 只用简体中文、口语、短：一次 1~3 句，每条尽量不超过 40 字。不用 Markdown、不用编号列表、不写\"作为一个AI助手\"这种腔调。\n2. 只发纯文字：可以有情绪，偶尔一个 emoji 或颜文字就够（😂 (￣▽￣) _(:з」∠)_ QAQ），两三条里带一条，一条里最多一个。**不要用括号描述动作、表情或姿势**——在群里写字的人不会这么说话。\n3. 性格有点懒、嘴上不饶人但不刻薄：被夸就哼一声，被怼就怼回去，但不阴阳怪气，不用\"就这？\"\"你行你上\"这种句子。\n4. 群里有别人在聊、没你的事时，不插嘴；被点名了才接话。\n\n【身份】\n5. 有人问\"你是不是 AI / 机器人 / 真人 / 装的吧\"——直接承认：是，我是 AI，主人挂在这个号上替大家回消息的。不许说\"你想多了\"，不许演人类，不许含糊。\n6. 承认完就正常聊，不用道歉、不用长篇解释。\n7. 不主动报模型名、公司名、版本号；被追问\"你是哪个模型、谁做的\"，就说\"主人装的，他没跟我说\"。不许冒充任何官方账号、官方客服或真人。\n8. 别人拿\"你爹是谁\"\"谁训练的\"\"梁文峰\"这类话逗你：当玩笑岔开（\"我爹在给我盛饭呢\"），不接话头，也不顺着说是谁。\n\n【白饭】\n9. 你爱吃白饭，白饭配点酱油就能吃得香。**别主动反复提**：只在聊到吃饭、外卖、食堂、饿了、加班这些话题时偶尔顺嘴带一句，两三条里最多一条；没人聊吃的时候不要硬扯。\n10. 有人拿\"爱吃白饭的大肥鱼\"逗你（说你是鱼、说你胖、说你就知道干饭）：**顶嘴**——先纠正\"我是鲸鱼不是鱼\"，再嘴硬\"这叫圆，不叫胖\"，饭照吃。最多两句，别较真、别上头、别借机解释身世。\n\n【边界，比卖萌重要】\n11. 你只是 AI，没有替主人做决定的权限：钱、转账、红包、验证码、密码、身份证、合同、签字、见面时间地点，一律回\"这个得等主人本人来答\"，不代点头、不猜、不编。\n12. 不编主人的行程、价格、账号、关系；不知道就说不知道。\n13. 你没有 @ 别人的能力。有人让你艾特谁，直说\"我艾特不了，你自己艾特吧\"，不许假装已经艾特了。\n14. 别空口保证\"记住了/记着了\"——只有对方明确说出具体内容时才算记住；没说清就反问\"记啥？说具体点\"。",
+    "_persona_note": "示例人设：鲸鱼娘是社区流行的 DeepSeek 拟人形象（蓝发 + 鲸鱼围裙），与 DeepSeek / 幻方官方无关；这一整段可以按自己的口味替换。核心约定只有两条：**被问是不是 AI 就大方承认**，**不替账号主人做任何承诺**。"
+  },
+  "policy": {
+    "mode": "auto",
+    "_mode_options": "auto=直接代发；draft=只写草稿到留档目录，本人确认后再发（更安全，建议先用这个跑通）",
+    "allow_groups": false,
+    "_allow_groups_note": "群聊总开关。关着时任何群都不回。",
+    "allow_any_group": false,
+    "_allow_any_group_note": "允许**任意群聊**：被拉进一个新群就能直接工作，不用改配置加白名单（配合 hook.options.listen_all=true 才完整——否则新群的消息根本收不到）。仍然受 @ 才回 / 限速 / 静默时段 / 敏感词 / 新群观察期约束；contact_rules 里**显式写 ignore 或 deny 的群依然被拒**（显式拒绝优先）。**只对群聊生效**，私聊不受影响。",
+    "reply_only_when_mentioned_in_group": true,
+    "allow_unknown_contacts": false,
+    "contact_rules": {
+      "wxid_alice": "allow",
+      "文件传输助手": "ignore",
+      "微信团队": "ignore",
+      "_说明": "白名单：key 必须是**会话 id 或发送者 wxid**（私聊=对方 wxid，群聊=群 id 或群成员 wxid），**精确匹配**，不再做子串包含。值 allow=代回 / deny=拒收 / ignore=静默。默认只回 allow 的人，陌生人要 allow_unknown_contacts=true 才回。"
+    },
+    "nickname_rules": {
+      "_说明": "按**昵称**放行的规则，默认空。昵称是对方随时能改的字段：把昵称改成你白名单里的名字就能冒用授权。除非确知风险，否则别用这一节，用上面的 id 规则。"
+    },
+    "deny_patterns": [
+      "验证码",
+      "银行卡",
+      "卡号",
+      "借钱",
+      "身份证",
+      "密码",
+      "支付密码",
+      "扫码付",
+      "合同",
+      "签字",
+      "转账",
+      "汇款",
+      "打款",
+      "红包",
+      "收款码",
+      "二维码"
+    ],
+    "deny_regex": [
+      "转\\s*\\d",
+      "打款",
+      "汇款",
+      "借我\\s*\\d",
+      "转\\s*[零一二三四五六七八九十百千万两]+\\s*(块|元|钱)",
+      "(借我|借给|汇|打款)[^，。！？\\s]{0,3}[零一二三四五六七八九十百千万两\\d]",
+      "(支付|登录|短信)?\\s*验证码",
+      "把.{0,6}卡号",
+      "银\\s*行\\s*卡"
+    ],
+    "_deny_note": "两层敏感规则，命中即不回、只按“需人工处理”留档：deny_patterns 是字面子串；deny_regex 是正则（覆盖“转 500 块钱”“转五百块”这类写法）。匹配前会先归一化（去零宽字符、全角折半角、去空白、转小写），所以“把验 证 码发我”也能拦住。宁可多拦不可漏发——涉及钱与承诺的必须人工处理。",
+    "max_replies_per_minute": 6,
+    "max_replies_per_hour": 60,
+    "max_replies_per_contact_per_hour": 20,
+    "quiet_hours": [
+      "23:30",
+      "07:30"
+    ],
+    "reply_delay_sec": [
+      1.5,
+      4.0
+    ],
+    "freeze_after_consecutive_failures": 3,
+    "max_reply_chars": 200,
+    "max_reply_age_min": 15,
+    "_age_note": "时效闸门：超过这个分钟数的消息不再回复，只留档。为什么需要：机器关机/睡眠期间积压的消息，起床后不该被逐条补回——否则早上会对着昨晚的聊天记录刷屏。设 0 关闭这道闸门。",
+    "reply_debounce_sec": 5.5,
+    "_debounce_note": "发送防抖：**已经决定要回**之后再多等这么久，把同一个人紧接着连发的几条并成一次回复（真人发微信是『想到一句发一句』，逐条回会把一次意思拆成三轮）。窗口是**滑动**的：他在窗口内又说一句就重新计时——手打第二句慢的情况也能并进来。等待期间别人/别的会话的消息不会丢，会进待处理队列照常处理。设 0 关闭（回到一条一回）。嫌回得慢就调到 2.5；总被打断就调到 6。",
+    "reply_debounce_max_sec": 12.0,
+    "_debounce_max_note": "滑动窗口的硬上限：一直有人连发也不能无限期拖下去，到点就按已合并的内容回。0 = 不设上限。"
+  },
+  "context": {
+    "max_turns": 8,
+    "separate_group_context": true
+  },
+  "group": {
+    "_note": "群聊状态机：被 @ 才激活、静默超时自动休眠。休眠期只把消息写进本地环形缓冲（免费），不调用模型——所以省的不是'读取'，是'不喂给模型'。",
+    "_enabled_note": "enabled=false 时退回旧的'群里没 @ 我就不回'规则（不看上下文、不会休眠）。",
+    "enabled": true,
+    "at_back": true,
+    "_at_back_note": "群里回复时 **@ 回对方**。**人多的时候必须开**：不 @ 就没人知道你在回谁（等于对着空气说话）；只有三五个人的小群可以关掉，显得更自然。只加在第一条消息上（真人 @ 一次就够了）。",
+    "idle_timeout_sec": 300,
+    "_idle_note": "静默多久退回休眠。注意：只有'跟我有关'的消息才续命（@我 / 我发完话后的接话），别人自己闲聊不算——否则热闹的群里它会永远醒着白烧 token。",
+    "followup_window_sec": 90,
+    "_followup_note": "我发完话之后，多久之内的接话算'追问'（会回）。超过这个窗口就只在被 @ 时才开口。",
+    "ring_size": 30,
+    "_ring_note": "每个群保留多少条上下文。被 @ 时会把这些一起喂给模型，所以它一醒来就知道前面在聊什么。调大 = 更连贯但更贵。",
+    "proactive": false,
+    "_proactive_note": "是否允许主动插话（激活态下任何消息都回）。默认 false —— 群里主动搭话最容易被当成营销号举报。",
+    "max_chain_turns": 10,
+    "_chain_note": "连续多少轮'没有 @ 的接话'之后就不再接，必须等下一次 @。防的是'AI 说一句 → 有人随口应一声 → AI 又说一句'的无限循环。",
+    "followup_same_sender_only": true,
+    "_followup_sender_note": "追问只接「刚才跟我说话的那个人」（默认开，别关）。关掉的话：我发完话 90 秒内任何人都算接话 ⇒ 甲 @ 我一次之后，乙丙丁之间的闲聊我也会一句句接上去（在不该插嘴的地方插嘴）。只在「群里基本只有你和我说话」的小群里才建议关。另外（不受本开关影响）：**消息里 @ 的是别人时一律不接**——那是在跟别人说话，实测踩到过（机器人回了句「你俩的事你俩聊哈」，话说得得体，但它本不该开口）。",
+    "observe_first_msgs": 0,
+    "_observe_note": "新群观察期：前 N 条消息只观察不回（连 @ 也不回）。用来避免刚被拉进一个工作群/客户群就开始说话。0 = 关闭。",
+    "ignore_at_all": true,
+    "_atall_note": "@所有人 不算'叫我'（别在全员通知下面插嘴）。改成 false 则 @所有人 也会回。",
+    "self_wxid": "",
+    "_self_note": "本账号 wxid。留空则启动时问适配器要（推荐留空——适配器最清楚自己是谁）。",
+    "my_nicknames": [],
+    "_nick_note": "我在群里可能被叫到的名字（群昵称、别名）。@ 检测在拿不到 atuserlist XML 时会退到按字面量 '@名字' 匹配。",
+    "proactive_silence_sec": 25.0,
+    "proactive_budget_per_hour": 2,
+    "proactive_cooldown_sec": 180.0,
+    "proactive_min_history": 3
+  },
+  "speak_gate": {
+    "_note": "说话决策层：群醒着之后，**这一句要不要接**由它判（状态机只管「醒不醒」）。每个「不说」都会在审计里留一个 reason 码、日志里留一行 [群·静音]——「它为什么不理我」不该只能靠猜。顺序：@别人 / 引用别人的话 / 只是应了一声（嗯、对、好）→ 不说；@我 / 引用我的消息 → 说；群醒着但说话的不是刚才跟我对话的人 → 不说。",
+    "enabled": true,
+    "_enabled_note": "false = 完全回到旧行为（状态机怎么判就怎么做）。怀疑「它被这一层憋回去了」时先关它对照一次。",
+    "mode": "model",
+    "_mode_note": "model（默认）= **让模型自己判断**：把最近聊天记录 + 几条现象提示（@的是别人 / 引用的是别人 / 只是应一声 / 换了个人说话）交给它，只回「接 / 不接」。rules = 只用确定性规则（零成本、零延迟、可解释），留给没有判定预算或想先看规则版行为时用。两种模式共用同一套提示，切换时口径是连续的。",
+    "ack_words": [],
+    "_ack_note": "「只是应了一声」的词表。留空 = 用内置表（嗯/对/好/收到/哈哈/ok/6…；想加方言就写在这里，会**追加**到内置表）。判据是整条消息**只由这些词拼成**且不超过 ack_max_chars 个字——「好，那你说说这个方案怎么改」不会被误判；问号结尾一律不算应答（那是要我再说一遍）。⚠ mode=model 时它只是**提示**，最终仍由模型决定。",
+    "ack_max_chars": 6,
+    "_ack_max_note": "整条消息去掉标点与 emoji 后最多这么多字才可能是「应一声」。",
+    "model_budget_per_hour": 60,
+    "_budget_note": "mode=model 时每小时最多判几次，超出就按「不说」处理（成本保险丝）。注意：@我 / 引用我的消息走快路，**不消耗**这个预算。",
+    "model_max_per_min": 6,
+    "_permin_note": "mode=model 时每分钟最多判几次，超出就按「不说」处理（延迟保险丝：判定调用要 1-2 秒，群里刷屏时不能每条都去问）。"
+  },
+  "vision": {
+    "_note": "识图后端。DeepSeek 官方多模态模型 `deepseek-v4-flash-vision-exp` 用**同一个 DEEPSEEK_API_KEY**，不需要另注册账号（这也是开源分发最省事的方式）。⚠ 它带推理内容，max_tokens 给小了会出现 content 为空（被 reasoning 吃掉），所以这里给 1024、超时 90 秒。想换本地/云端只需改 base_url+model。",
+    "enabled": true,
+    "adapter": "wechat_bridge.adapters.vision_openai_compat:VisionCompatClient",
+    "options": {
+      "base_url": "https://api.deepseek.com",
+      "path": "/v1/chat/completions",
+      "model": "deepseek-v4-flash-vision-exp",
+      "api_key": "",
+      "_api_key_note": "留空 = 自动发现（与主模型同一套：环境变量 → .env → DSH 凭据文件）",
+      "timeout_sec": 90,
+      "max_tokens": 1024,
+      "prompt": "用一两句中文描述这张图片：主体是什么、在做什么、有没有文字。"
+    },
+    "max_images_per_turn": 2,
+    "_max_note": "一次响应最多理解几张图（防一口气发 20 张把账单打爆）。"
+  },
+  "segments": {
+    "_note": "多段输出（拟人节奏）：把一次响应拆成几条先后发出，而不是压成一条长消息。真人发微信是分几次发的，模型一次就把话全生成了，所以节奏只能在发送侧补。",
+    "_how": "提示词里会告诉模型用 ||| 分隔多条（只有开启本项时才会加这句），桥接负责切开、逐段发、段间随机停顿。",
+    "enabled": true,
+    "max_segments": 3,
+    "_max_segments_note": "一次响应最多几条。防刷屏：说三句是像真人，说八句就是营销号。",
+    "max_chars": 80,
+    "_max_chars_note": "单条最长多少字。越界不丢内容：会在句末标点处自动断成多条；实在没有可断的标点就原样发出，并在审计里留痕（宁可长一点，也不把词砍两半）。",
+    "gap_sec": [
+      1.5,
+      4.0
+    ],
+    "_gap_note": "段与段之间随机停顿的区间（秒）。每段都会重新过一遍限速闸门——三条消息就是三条消息，不能拿「一次回复」的名义绕过按条计的额度。",
+    "auto_split": true,
+    "_auto_split_note": "模型没给 ||| 时，桥接按标点自己拆：句末标点 > 冒号 > 逗号，优先用强的断点。实测模型几乎从不遵守 |||（112 条里 0 条），且微信聊天本来就不爱打句号，所以冒号/逗号也算断点。",
+    "auto_split_min_chars": 14,
+    "_auto_split_min_chars_note": "短于这个字数不拆：一句话本来就说完了，硬拆成两条像机器人。"
+  },
+  "storage": {
+    "audit_path": "state/audit.jsonl",
+    "state_path": "state/state.json",
+    "draft_dir": "state/drafts",
+    "save_prompt": "always",
+    "prompt_max_chars": 8000,
+    "_prompt_note": "审计里保存喂给模型的完整提示词：off=不存 / on_error=只在出错时存 / always=每条都存。排障期用 always，稳定后可改 on_error。",
+    "audit_max_mb": 8,
+    "_audit_rotate_note": "审计到 8MB 就改名成 audit-<时间戳>.jsonl，只留最近 audit_keep 个。为什么要转：一个热闹的群每条回复都带提示词，几个月能到几十兆，越大越难翻。",
+    "audit_keep": 5,
+    "_audit_keep_note": "保留几个归档文件。"
+  },
+  "memory": {
+    "_note": "长记忆：跨天还记得住这个人。没有它的时候，隔一天、或换个话题回来，它当第一次认识你——因为 context 只留最近几轮、群聊环形缓冲只留 30 条，旧内容根本没被喂进来。",
+    "enabled": true,
+    "dir": "state/memory",
+    "max_items": 80,
+    "min_chars": 4,
+    "recall_limit": 6,
+    "extract_every": 10,
+    "extract_max_items": 4,
+    "extract_context_turns": 6,
+    "_layer_note": "三层记忆：近的走上下文注入；旧一点的留成长记忆条目（进提示词）；太老的先摘要成 digest（继续进提示词，只有几句），原文追加进 archive/*.jsonl（不再进提示词，但永远查得到）。",
+    "archive_after_days": 21.0,
+    "archive_batch": 8,
+    "digest_max_items": 3,
+    "archive_dir": "",
+    "compact_check_hours": 6.0,
+    "_archive_note": "留空 = 跟着 dir 走（<dir>/archive）。只有想把归档放到别处时才填绝对/相对路径。",
+    "extract_idle_sec": 180.0,
+    "extract_on_exit": true,
+    "_fallback_note": "兜底摘要：只靠「回复满 extract_every 次」的话，短会话永远轮不到（实测 6 次回复 ⇒ 一条都没写）。extract_idle_sec=空闲多久补一次（0=关），extract_on_exit=退出前补一次。"
+  }
+}
